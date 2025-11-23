@@ -184,6 +184,36 @@ your-repo/
 └── ... (your application files)
 ```
 
+## MCP Server (AI-Assisted Installation)
+
+Install and manage SalsaGate using AI assistants like Claude with the included MCP server.
+
+### Setup for Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "salsag-mcp": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/tanishk97/salsaG-installation#subdirectory=salsag-mcp", "salsag-mcp"]
+    }
+  }
+}
+```
+
+### Available Commands
+
+Once configured, ask Claude:
+
+- "Check if SalsaGate is installed in my project"
+- "Install SalsaGate with staging bucket X and website bucket Y"
+- "Verify my SalsaGate configuration"
+- "Show SalsaGate trust ledger status"
+
+See [salsag-mcp/README.md](salsag-mcp/README.md) for full documentation.
+
 ## Troubleshooting
 
 ### "Artifact not found in ledger"
