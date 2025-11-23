@@ -1,0 +1,43 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing SalsaG CLI for verification..."
+      - python3 -m pip install --upgrade pip
+      - pip install git+https://github.com/tanishk97/salsaG-installation.git#subdirectory=salsag-cli
+      - echo "Installing cosign for cryptographic verification..."
+      - curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+      - sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+      - sudo chmod +x /usr/local/bin/cosign
+      - cosign version
+
+  pre_build:
+    commands:
+      - echo "Starting deployment verification phase"
+      - ls -la
+      - echo "Verifying artifact with SalsaG CLI..."
+      - |
+        if salsaG verify --artifact index.tgz --config salsag.yml; then
+          echo "Verification PASSED - proceeding with deployment"
+        else
+          echo "Verification FAILED - stopping deployment"
+          exit 1
+        fi
+
+  build:
+    commands:
+      - echo "Downloading VERIFIED artifact for deployment..."
+      # UPDATE: Replace with your staging bucket name
+      - aws s3 cp s3://YOUR_STAGING_BUCKET/index.tgz ./verified-index.tgz
+      - echo "Extracting verified content..."
+      - tar -xzf verified-index.tgz
+      - echo "Deploying verified content to production..."
+      # UPDATE: Replace with your website bucket name
+      - aws s3 sync . s3://YOUR_WEBSITE_BUCKET/ --exclude "*.tgz" --exclude "*.yml" --exclude ".git/*"
+
+  post_build:
+    commands:
+      - echo "Deployment completed successfully"

@@ -1,0 +1,14 @@
+# SalsaGate Configuration Template
+# Replace the placeholder values with your AWS resource names
+
+aws:
+  region: us-east-1                              # AWS region
+  staging_bucket: YOUR_STAGING_BUCKET            # S3 bucket for signed artifacts
+  ledger_table: trust-ledger                     # DynamoDB table for trust ledger
+
+logging:
+  cloudwatch:
+    level: "INFO"
+    log_group: "/salsagate/deploy"
+    stream_name: "verification-metrics"
+    region: us-east-1

@@ -1,0 +1,117 @@
+name: SalsaGate Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '**.html'
+      - '**.css'
+      - '**.js'
+      - 'salsag.yml'
+
+env:
+  AWS_REGION: us-east-1
+  # UPDATE: Replace with your bucket names
+  STAGING_BUCKET: YOUR_STAGING_BUCKET
+  WEBSITE_BUCKET: YOUR_WEBSITE_BUCKET
+
+jobs:
+  build-sign-deploy:
+    runs-on: ubuntu-latest
+    # For CodeBuild self-hosted runner, use:
+    # runs-on: codebuild-YourProject-${{ github.run_id }}-${{ github.run_attempt }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install SalsaG CLI
+        run: |
+          pip install git+https://github.com/tanishk97/salsaG-installation.git#subdirectory=salsag-cli
+          salsaG --version
+
+      - name: Install cosign
+        run: |
+          curl -sL "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64" -o cosign
+          chmod +x cosign
+          sudo mv cosign /usr/local/bin/
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # UPDATE: Add AWS_ROLE_ARN to your repository secrets
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build Application
+        run: |
+          echo "Building application..."
+          mkdir -p dist
+          # Copy your application files to dist/
+          cp -r *.html dist/ 2>/dev/null || true
+          cp -r *.css dist/ 2>/dev/null || true
+          cp -r *.js dist/ 2>/dev/null || true
+          cp -r assets dist/ 2>/dev/null || true
+          ls -la dist/
+
+      - name: Package Artifact
+        run: |
+          echo "Packaging artifact..."
+          cd dist && tar -czf ../index.tgz . && cd ..
+          ls -la index.tgz
+
+      - name: Run SalsaG Trust Pipeline
+        run: |
+          echo "Starting SalsaG Trust Pipeline..."
+          salsaG start --artifact ./dist --config ./salsag.yml
+
+      - name: Upload to Staging
+        run: |
+          echo "Uploading artifact to staging bucket..."
+          aws s3 cp index.tgz s3://${{ env.STAGING_BUCKET }}/index.tgz
+
+      - name: Invoke Keyless Signing Service
+        run: |
+          echo "Triggering keyless signing via CodeBuild..."
+          # UPDATE: Replace with your signer project name
+          BUILD_ID=$(aws codebuild start-build \
+            --project-name salsag-artifact-signer \
+            --environment-variables-override name=ARTIFACT_KEY,value=index.tgz \
+            --query 'build.id' \
+            --output text)
+
+          echo "Build ID: $BUILD_ID"
+          echo "Waiting for signing to complete..."
+
+          for i in {1..30}; do
+            STATUS=$(aws codebuild batch-get-builds --ids $BUILD_ID --query 'builds[0].buildStatus' --output text)
+            echo "[$i] Signing status: $STATUS"
+            if [ "$STATUS" = "SUCCEEDED" ]; then
+              echo "Keyless signing completed successfully"
+              break
+            elif [ "$STATUS" = "FAILED" ]; then
+              echo "Signing failed"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Trigger Deployment Pipeline
+        run: |
+          echo "Triggering CodePipeline..."
+          # UPDATE: Replace with your pipeline name
+          aws codepipeline start-pipeline-execution --name your-pipeline-name || echo "Pipeline trigger skipped"
+
+      - name: Pipeline Summary
+        run: |
+          echo "Pipeline completed successfully!"
+          echo "Artifact signed and recorded in trust ledger"
